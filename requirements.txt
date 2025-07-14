@@ -2,5 +2,4 @@ streamlit
 openai
 whisper
 pytube
-scenedetect
 ffmpeg-python
