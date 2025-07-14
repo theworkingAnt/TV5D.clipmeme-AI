@@ -57,32 +57,51 @@ if st.button("Generate") and video_path:
             result = model.transcribe(video_path, language="tagalog")
             transcript = result["text"]
 
-            # Step 3: Create short branded video clip (without subtitles)
-            output_clip = video_path.replace(".mp4", "_clip.mp4")
+            # Step 3: Create subtitle file (SRT)
+            srt_path = video_path.replace(".mp4", ".srt")
+            with open(srt_path, "w", encoding="utf-8") as srt_file:
+                srt_file.write("1\n00:00:00,000 --> 00:00:59,000\n" + transcript.strip())
 
-            subprocess.run([
+            # Step 4: Create short branded video clip with subtitles
+            output_clip = video_path.replace(".mp4", "_clip.mp4")
+            ffmpeg_result = subprocess.run([
                 "ffmpeg", "-i", video_path,
                 "-ss", start_time, "-t", duration,
-                "-vf", "scale=720:1280,drawbox=x=0:y=0:w=iw:h=100:color=black@0.5:t=fill,drawtext=text='ClipMeme AI':fontcolor=white:fontsize=30:x=10:y=10",
+                "-vf", f"subtitles={srt_path},scale=720:1280,drawbox=x=0:y=0:w=iw:h=100:color=black@0.5:t=fill,drawtext=text='ClipMeme AI':fontcolor=white:fontsize=30:x=10:y=10",
                 "-y", output_clip
-            ])
+            ], capture_output=True, text=True)
 
-            st.video(output_clip)
-            st.success("✅ Clip generated from first 60 seconds")
+            if ffmpeg_result.returncode != 0:
+                st.error("❌ FFmpeg failed to process video. Error output:")
+                st.code(ffmpeg_result.stderr)
+            elif not os.path.exists(output_clip):
+                st.error("❌ Output clip was not created. Check ffmpeg path or subtitle format.")
+            else:
+                st.video(output_clip)
+                st.success("✅ Clip generated from first 60 seconds")
 
-            # Step 4: Meme Text via OpenAI
-            if action in ["Meme", "Both"]:
-                prompt = f"Generate 3 witty or emotional Filipino meme captions based on this teleserye quote: '{transcript[:200]}'"
-                response = openai.ChatCompletion.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                captions = response["choices"][0]["message"]["content"]
-                st.write("### Suggested Meme Captions:")
-                st.markdown(captions)
+                # Step 5: Meme Text via OpenAI
+                if action in ["Meme", "Both"]:
+                    prompt = f"Generate 3 witty or emotional Filipino meme captions based on this teleserye quote: '{transcript[:200]}'"
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4o",
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                    captions = response["choices"][0]["message"]["content"]
+                    st.write("### Suggested Meme Captions:")
+                    st.markdown(captions)
 
-            if option == "Upload video":
-                os.remove(video_path)
+                # Step 6: Download Button
+                with open(output_clip, "rb") as f:
+                    st.download_button(
+                        label="📥 Download Generated Clip",
+                        data=f,
+                        file_name="clipmeme_output.mp4",
+                        mime="video/mp4"
+                    )
+
+                if option == "Upload video":
+                    os.remove(video_path)
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
