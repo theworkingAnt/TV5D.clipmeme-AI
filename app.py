@@ -50,7 +50,7 @@ if st.button("Generate") and video_path:
         try:
             # Step 1: Use default values instead of scene detection
             start_time = "00:00:00"
-            duration = "00:00:60"
+            duration = "00:01:00"
 
             # Step 2: Transcribe with Whisper
             model = whisper_lib.load_model("base")
