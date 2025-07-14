@@ -1,7 +1,6 @@
-# Updated to remove scenedetect
 import streamlit as st
 import openai
-import whisper
+import whisper as whisper_lib
 import os
 import tempfile
 import subprocess
@@ -31,6 +30,8 @@ elif option == "Paste YouTube link":
     if video_link:
         with st.spinner("Downloading video from YouTube..."):
             try:
+                if not video_link.startswith("http"):
+                    video_link = "https://www.youtube.com/watch?v=" + video_link.strip()
                 yt = YouTube(video_link)
                 stream = yt.streams.filter(file_extension="mp4", progressive=True).order_by("resolution").desc().first()
                 yt_file = stream.download(filename_prefix="yt_")
@@ -52,8 +53,8 @@ if st.button("Generate") and video_path:
             duration = "00:00:60"
 
             # Step 2: Transcribe with Whisper
-            model = whisper.load_model("base")
-            result = model.transcribe(video_path, language="Filipino")
+            model = whisper_lib.load_model("base")
+            result = model.transcribe(video_path, language="tagalog")
             transcript = result["text"]
 
             # Step 3: Create short branded video clip (without subtitles)
