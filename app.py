@@ -5,9 +5,6 @@ import os
 import tempfile
 import subprocess
 from pytube import YouTube
-import scenedetect
-from scenedetect import VideoManager, SceneManager
-from scenedetect.detectors import ContentDetector
 
 # CONFIG (TEMPORARY FOR LOCAL TESTING)
 openai.api_key = "sk-your-openai-key-here"  # Replace with your real OpenAI API key
@@ -49,27 +46,9 @@ action = st.selectbox("What do you want to generate?", ["Short Clip", "Meme", "B
 if st.button("Generate") and video_path:
     with st.spinner("Processing video..."):
         try:
-            # Step 1: Detect scenes using PySceneDetect
-            scene_video_manager = VideoManager([video_path])
-            scene_manager = SceneManager()
-            scene_manager.add_detector(ContentDetector(threshold=30.0))
-            base_timecode = scene_video_manager.get_base_timecode()
-
-            scene_video_manager.set_downscale_factor()
-            scene_video_manager.start()
-            scene_manager.detect_scenes(frame_source=scene_video_manager)
-            scene_list = scene_manager.get_scene_list(base_timecode)
-
-            # Pick the longest scene or fallback to first 60s
-            if scene_list:
-                longest_scene = max(scene_list, key=lambda s: s[1].get_frames() - s[0].get_frames())
-                start_time = str(longest_scene[0])
-                duration = str(longest_scene[1].get_seconds() - longest_scene[0].get_seconds())
-            else:
-                start_time = "00:00:00"
-                duration = "00:00:60"
-
-            scene_video_manager.release()
+            # Step 1: Use default values instead of scene detection
+            start_time = "00:00:00"
+            duration = "00:00:60"
 
             # Step 2: Transcribe with Whisper
             model = whisper.load_model("base")
@@ -78,7 +57,6 @@ if st.button("Generate") and video_path:
 
             # Step 3: Create short branded video clip (without subtitles)
             output_clip = video_path.replace(".mp4", "_clip.mp4")
-            logo_path = "branding/logo.png"  # Ensure logo file exists here
 
             subprocess.run([
                 "ffmpeg", "-i", video_path,
@@ -88,7 +66,7 @@ if st.button("Generate") and video_path:
             ])
 
             st.video(output_clip)
-            st.success("✅ Clip generated with scene detection and branding")
+            st.success("✅ Clip generated from first 60 seconds")
 
             # Step 4: Meme Text via OpenAI
             if action in ["Meme", "Both"]:
