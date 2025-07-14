@@ -1,13 +1,14 @@
 import streamlit as st
-import openai
-import whisper as whisper_lib
 import os
 import tempfile
 import subprocess
 from pytube import YouTube
+import whisper as whisper_lib
+from openai import OpenAI
 
-# CONFIG (TEMPORARY FOR LOCAL TESTING)
-openai.api_key = "sk-your-openai-key-here"  # Replace with your real OpenAI API key
+# CONFIG
+openai_api_key = "sk-your-openai-key-here"  # Replace with your actual key
+client = OpenAI(api_key=openai_api_key)
 
 # TITLE
 st.set_page_config(page_title="ClipMeme AI", layout="centered")
@@ -40,58 +41,82 @@ elif option == "Paste YouTube link":
             except Exception as e:
                 st.error(f"Failed to download video: {e}")
 
-# CHARACTER/SHOW INPUT
+# INPUTS
 show_name = st.text_input("Show or Character Name:")
 action = st.selectbox("What do you want to generate?", ["Short Clip", "Meme", "Both"])
+emotion_choice = st.selectbox("Pick emotion to extract:", ["Drama", "Comedy", "Romantic", "Intense", "Neutral"])
 
 # PROCESS VIDEO
 if st.button("Generate") and video_path:
     with st.spinner("Processing video..."):
         try:
-            # Step 1: Use default values instead of scene detection
-            start_time = "00:00:00"
-            duration = "00:01:00"
-
-            # Step 2: Transcribe with Whisper
+            # Transcribe full video
             model = whisper_lib.load_model("base")
             result = model.transcribe(video_path, language="tagalog")
             transcript = result["text"]
+            full_segments = transcript.split(".")
 
-            # Step 3: Create subtitle file (SRT)
+            # Chunk the transcript and classify each segment
+            segments = []
+            for i in range(0, len(full_segments), 3):
+                chunk = ". ".join(full_segments[i:i+3]).strip()
+                start_sec = i * 3 * 2  # rough start time
+                if chunk:
+                    prompt = f"What is the emotional tone of this teleserye scene?\nScene: {chunk}\nRespond with one word only: Drama, Comedy, Romantic, Intense, or Neutral."
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                    emotion = response.choices[0].message.content.strip().capitalize()
+                    segments.append({"emotion": emotion, "text": chunk, "start": start_sec})
+
+            # Find the best-matching emotional scene
+            match = next((s for s in segments if s["emotion"] == emotion_choice), None)
+            if not match:
+                st.warning(f"No matching {emotion_choice} scene found. Showing first available scene.")
+                match = segments[0]
+
+            # Set up timestamps
+            start_time = match["start"]
+            mins, secs = divmod(start_time, 60)
+            timestamp = f"00:{int(mins):02d}:{int(secs):02d}"
+            subtitle = match["text"]
+
+            # Save subtitle
             srt_path = video_path.replace(".mp4", ".srt")
             with open(srt_path, "w", encoding="utf-8") as srt_file:
-                srt_file.write("1\n00:00:00,000 --> 00:00:59,000\n" + transcript.strip())
+                srt_file.write(f"1\n00:00:00,000 --> 00:00:59,000\n{subtitle.strip()}")
 
-            # Step 4: Create short branded video clip with subtitles
-            output_clip = video_path.replace(".mp4", "_clip.mp4")
+            # Clip video
+            output_clip = video_path.replace(".mp4", f"_{emotion_choice.lower()}_clip.mp4")
             ffmpeg_result = subprocess.run([
                 "ffmpeg", "-i", video_path,
-                "-ss", start_time, "-t", duration,
+                "-ss", timestamp, "-t", "00:01:00",
                 "-vf", f"subtitles={srt_path},scale=720:1280,drawbox=x=0:y=0:w=iw:h=100:color=black@0.5:t=fill,drawtext=text='ClipMeme AI':fontcolor=white:fontsize=30:x=10:y=10",
                 "-y", output_clip
             ], capture_output=True, text=True)
 
             if ffmpeg_result.returncode != 0:
-                st.error("❌ FFmpeg failed to process video. Error output:")
+                st.error("❌ FFmpeg failed:")
                 st.code(ffmpeg_result.stderr)
             elif not os.path.exists(output_clip):
-                st.error("❌ Output clip was not created. Check ffmpeg path or subtitle format.")
+                st.error("❌ Output clip was not created.")
             else:
                 st.video(output_clip)
-                st.success("✅ Clip generated from first 60 seconds")
+                st.success(f"✅ {emotion_choice} scene clipped!")
 
-                # Step 5: Meme Text via OpenAI
+                # Meme caption via GPT
                 if action in ["Meme", "Both"]:
-                    prompt = f"Generate 3 witty or emotional Filipino meme captions based on this teleserye quote: '{transcript[:200]}'"
-                    response = openai.chat.completions.create(
+                    meme_prompt = f"Generate 3 Filipino meme captions for this teleserye scene: '{subtitle[:200]}'"
+                    response = client.chat.completions.create(
                         model="gpt-4o",
-                        messages=[{"role": "user", "content": prompt}]
+                        messages=[{"role": "user", "content": meme_prompt}]
                     )
                     captions = response.choices[0].message.content
                     st.write("### Suggested Meme Captions:")
                     st.markdown(captions)
 
-                # Step 6: Download Button
+                # Download
                 with open(output_clip, "rb") as f:
                     st.download_button(
                         label="📥 Download Generated Clip",
